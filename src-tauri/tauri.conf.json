@@ -1,0 +1,56 @@
+{
+  "$schema": "https://tauri.studio/schema.json",
+  "build": {
+    "beforeDevCommand": "cd react-vite-frontend && npm run dev",
+    "beforeBuildCommand": "cd react-vite-frontend && npm run build",
+    "devPath": "http://localhost:5173",
+    "distDir": "../react-vite-frontend/dist",
+    "withGlobalTauri": false
+  },
+  "package": {
+    "productName": "tauri-macro",
+    "version": "0.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.tauri.dev",
+      "icon": [
+        "icons/icon.ico"
+      ],
+      "category": "Utility",
+      "copyright": "",
+      "deb": {
+        "depends": []
+      },
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": ""
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": false,
+        "title": "tauri-macro",
+        "width": 1040,
+        "height": 800
+      }
+    ]
+  }
+} 

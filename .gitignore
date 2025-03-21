@@ -1,0 +1,69 @@
+# Rust backend
+/rust-backend/target/
+**/*.rs.bk
+Cargo.lock
+*.pdb
+
+# Rust + VS Code
+/rust-backend/.vscode/
+
+# React/NodeJS
+/react-vite-frontend/node_modules/
+/react-vite-frontend/dist/
+/react-vite-frontend/build/
+/react-vite-frontend/.cache/
+/react-vite-frontend/coverage/
+/react-vite-frontend/npm-debug.log*
+/react-vite-frontend/yarn-debug.log*
+/react-vite-frontend/yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Tauri
+/src-tauri/target/
+/src-tauri/dist/
+/src-tauri/src-tauri/target/
+/src-tauri/*.d.ts
+/src-tauri/.cargo/
+
+# ระบบปฏิบัติการ
+.DS_Store
+Thumbs.db
+.directory
+*.swp
+*.swo
+
+# ไฟล์การตั้งค่า
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+.idea_modules/
+node_modules
+
+# อื่นๆ
+.log
+*.log
+logs/
+.tmp
+.temp
+.cache/
+
+# Git
+**/.git/
+!/.git/ 
