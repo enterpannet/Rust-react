@@ -235,6 +235,29 @@ async fn handle_websocket_message(
                 },
                 "perform_select_all" => {
                     println!("Performing select all (Ctrl+A)");
+                    
+                    // ตรวจสอบว่าเพิ่งมีการเริ่ม/หยุดการบันทึกโดยใช้ F7 หรือไม่
+                    let is_after_recording_toggle = controller.is_recording_toggle_pending;
+                    
+                    // ถ้ากำลังมีการใช้ F7 เพื่อควบคุมการบันทึก ให้ข้ามการทำงานนี้
+                    if is_after_recording_toggle {
+                        println!("Skipping Select All as it was triggered right after F7 recording toggle");
+                        controller.is_recording_toggle_pending = false;
+                        
+                        // ส่งข้อความยืนยันกลับไปยังไคลเอนต์
+                        let response = create_message("action_completed", json!({
+                            "action": "select_all",
+                            "status": "skipped",
+                            "message": "Select All skipped because it was triggered by F7 key used for recording"
+                        }));
+                        
+                        if let Some(client_sender) = controller.clients.get(client_id) {
+                            let _ = client_sender.send(response);
+                        }
+                        
+                        return Ok(());
+                    }
+                    
                     drop(controller); // ปล่อย lock ก่อนเรียกฟังก์ชันที่อาจใช้เวลานาน
                     crate::mouse_keyboard::perform_select_all().await;
                     
@@ -363,17 +386,79 @@ async fn handle_websocket_message(
                     broadcast_to_clients(&controller.clients, status_msg);
                     println!("Started automation with {} loops", loop_count);
                     
+                    // ตรวจสอบว่ามีการส่ง steps มาหรือไม่
+                    let steps_to_run = if let Some(steps_array) = data.get("steps").and_then(|v| v.as_array()) {
+                        // ถ้ามีการส่ง steps มา ให้ใช้ steps ที่ส่งมาแทน
+                        println!("Using steps sent from frontend: {} steps", steps_array.len());
+                        
+                        let mut parsed_steps = Vec::new();
+                        for step_value in steps_array {
+                            if let (Some(id), Some(type_), Some(data)) = (
+                                step_value.get("id").and_then(|v| v.as_str()),
+                                step_value.get("type").and_then(|v| v.as_str()),
+                                step_value.get("data")
+                            ) {
+                                let step = crate::models::MacroStep {
+                                    id: id.to_string(),
+                                    type_: type_.to_string(),
+                                    data: data.clone(),
+                                };
+                                parsed_steps.push(step);
+                            }
+                        }
+                        parsed_steps
+                    } else {
+                        // ถ้าไม่มี ให้ใช้ steps จาก controller ตามเดิม (เผื่อ backward compatibility)
+                        println!("No steps sent from frontend, using stored steps: {} steps", controller.steps.len());
+                        controller.steps.clone()
+                    };
+                    
                     // เรียกใช้ฟังก์ชันทำงานตามขั้นตอน
-                    let steps_clone = controller.steps.clone();
                     let controller_clone = automation_controller.clone();
-                    execute_automation(controller_clone, steps_clone, loop_count, None).await;
+                    execute_automation(controller_clone, steps_to_run, loop_count, None).await;
                 }
             },
             "run_selected_steps" => {
                 // เริ่มการทำงานอัตโนมัติเฉพาะสเต็ปที่เลือก
                 if let Some(data) = json_data.get("data") {
-                    if let Some(step_ids) = data.get("step_ids").and_then(|v| v.as_array()) {
-                        // แปลง array ของ step IDs เป็น Vector ของ string
+                    // ตรวจสอบว่ามีการส่ง steps มาโดยตรงหรือไม่
+                    if let Some(steps_array) = data.get("steps").and_then(|v| v.as_array()) {
+                        // รับ steps ที่ส่งมาโดยตรง
+                        println!("Using steps sent directly from frontend: {} steps", steps_array.len());
+                        
+                        if !steps_array.is_empty() {
+                            controller.is_running = true;
+                            
+                            // แจ้งการอัปเดต
+                            let status_msg = create_message("status_update", json!({
+                                "status": "running",
+                                "message": format!("Running {} selected steps", steps_array.len())
+                            }));
+                            broadcast_to_clients(&controller.clients, status_msg);
+                            
+                            // แปลง steps จาก JSON เป็น MacroStep
+                            let mut selected_steps = Vec::new();
+                            for step_value in steps_array {
+                                if let (Some(id), Some(type_), Some(data)) = (
+                                    step_value.get("id").and_then(|v| v.as_str()),
+                                    step_value.get("type").and_then(|v| v.as_str()),
+                                    step_value.get("data")
+                                ) {
+                                    let step = crate::models::MacroStep {
+                                        id: id.to_string(),
+                                        type_: type_.to_string(),
+                                        data: data.clone(),
+                                    };
+                                    selected_steps.push(step);
+                                }
+                            }
+                            
+                            // เรียกใช้ฟังก์ชันทำงานตามขั้นตอน
+                            let controller_clone = automation_controller.clone();
+                            execute_automation(controller_clone, selected_steps, 1, None).await;
+                        }
+                    } else if let Some(step_ids) = data.get("step_ids").and_then(|v| v.as_array()) {
+                        // แบบเดิม - ใช้ step_ids
                         let selected_ids: Vec<String> = step_ids
                             .iter()
                             .filter_map(|id| id.as_str().map(|s| s.to_string()))
@@ -652,6 +737,10 @@ async fn execute_automation(
                 
                 let step_msg = create_message("step_executing", json!({
                     "index": current_index,
+                    "total_steps": filtered_steps.len(),
+                    "completed_steps": step_index,
+                    "loop_index": loop_index,
+                    "total_loops": loop_count
                 }));
                 broadcast_to_clients(&clients_clone, step_msg);
                 
@@ -729,6 +818,14 @@ async fn execute_automation(
                             let _ = crate::mouse_keyboard::keyboard_press_key(key).await;
                             println!("Key press completed");
                         }
+                    },
+                    "wait" => {
+                        // เป็นขั้นตอนการรอ ไม่ต้องทำอะไรเพิ่มเติม เพราะทุก step มีการรอตามเวลาที่กำหนดอยู่แล้ว
+                        println!("Wait step - will continue with normal wait time");
+                    },
+                    "group" => {
+                        // กรณีนี้ไม่ควรเกิดขึ้นเพราะได้แยกขั้นตอนใน group ออกมาตั้งแต่ใน frontend แล้ว
+                        println!("Group step encountered - should not happen as groups are processed in frontend");
                     },
                     _ => {
                         println!("Unknown step type: {}", step_type);
@@ -891,40 +988,16 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
                                 )
                             }).collect();
                             
-                            // ถ้ามีปุ่มฟังก์ชันเพียงปุ่มเดียว ให้บันทึกเฉพาะปุ่มนั้น
+                            // ถ้ามีปุ่มฟังก์ชันเพียงปุ่มเดียว ให้ข้ามการบันทึก - ปุ่มฟังก์ชันใช้สำหรับควบคุมแอพฯ เท่านั้น
                             if function_keys.len() == 1 {
-                                // ตรวจสอบว่าเป็นปุ่ม F7 ที่ใช้สำหรับเริ่มหรือหยุดการบันทึกหรือไม่
-                                // ถ้าเป็น F7 และเพิ่งเริ่มต้น/หยุดการบันทึก ให้ข้ามการบันทึกคีย์นี้
-                                let is_f7 = matches!(function_keys[0], device_query::Keycode::F7);
+                                // ไม่บันทึกปุ่มฟังก์ชันเนื่องจากเป็นปุ่มลัดของแอพฯ
+                                let key_name = format!("{:?}", function_keys[0]);
+                                println!("Skipping recording function key {} as it's used as application shortcut", key_name);
                                 
-                                // ถ้าเป็น F7 ที่ใช้เป็น shortcut ควบคุมการบันทึก ให้ข้ามไป
-                                if is_f7 && controller.lock().await.is_recording_toggle_pending {
-                                    println!("Ignoring F7 key as it was used to toggle recording");
-                                    
-                                    // รีเซ็ตค่า recording_toggle_pending
-                                    {
-                                        let mut controller = controller.lock().await;
-                                        controller.is_recording_toggle_pending = false;
-                                    }
-                                    
-                                    // ข้ามการตรวจสอบคีย์คอมโบในรอบนี้
-                                    last_keys = current_keys;
-                                    tokio::time::sleep(poll_interval).await;
-                                    continue;
-                                }
-                                
-                                // บันทึกปุ่มฟังก์ชันตามปกติ
-                                let key_str = format!("{:?}", function_keys[0]);
-                                
-                                let step_data = json!({
-                                    "type": "key_press",
-                                    "key": key_str,
-                                    "wait_time": 0.3,
-                                    "randomize": false
-                                });
-                                
-                                add_recorded_step(&controller, "key_press", &step_data).await;
-                                println!("Recorded: Function key {}", key_str);
+                                // ข้ามการตรวจสอบคีย์คอมโบในรอบนี้
+                                last_keys = current_keys;
+                                tokio::time::sleep(poll_interval).await;
+                                continue;
                             }
                         }
                     }
@@ -1034,40 +1107,16 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
                         )
                     }).collect();
                     
-                    // ถ้ามีปุ่มฟังก์ชันเพียงปุ่มเดียว ให้บันทึกเฉพาะปุ่มนั้น
+                    // ถ้ามีปุ่มฟังก์ชันเพียงปุ่มเดียว ให้ข้ามการบันทึก - ปุ่มฟังก์ชันใช้สำหรับควบคุมแอพฯ เท่านั้น
                     if function_keys.len() == 1 {
-                        // ตรวจสอบว่าเป็นปุ่ม F7 ที่ใช้สำหรับเริ่มหรือหยุดการบันทึกหรือไม่
-                        // ถ้าเป็น F7 และเพิ่งเริ่มต้น/หยุดการบันทึก ให้ข้ามการบันทึกคีย์นี้
-                        let is_f7 = matches!(function_keys[0], device_query::Keycode::F7);
+                        // ไม่บันทึกปุ่มฟังก์ชันเนื่องจากเป็นปุ่มลัดของแอพฯ
+                        let key_name = format!("{:?}", function_keys[0]);
+                        println!("Skipping recording function key {} as it's used as application shortcut", key_name);
                         
-                        // ถ้าเป็น F7 ที่ใช้เป็น shortcut ควบคุมการบันทึก ให้ข้ามไป
-                        if is_f7 && controller.lock().await.is_recording_toggle_pending {
-                            println!("Ignoring F7 key as it was used to toggle recording");
-                            
-                            // รีเซ็ตค่า recording_toggle_pending
-                            {
-                                let mut controller = controller.lock().await;
-                                controller.is_recording_toggle_pending = false;
-                            }
-                            
-                            // ข้ามการตรวจสอบคีย์คอมโบในรอบนี้
-                            last_keys = current_keys;
-                            tokio::time::sleep(poll_interval).await;
-                            continue;
-                        }
-                        
-                        // บันทึกปุ่มฟังก์ชันตามปกติ
-                        let key_str = format!("{:?}", function_keys[0]);
-                        
-                        let step_data = json!({
-                            "type": "key_press",
-                            "key": key_str,
-                            "wait_time": 0.3,
-                            "randomize": false
-                        });
-                        
-                        add_recorded_step(&controller, "key_press", &step_data).await;
-                        println!("Recorded: Function key {}", key_str);
+                        // ข้ามการตรวจสอบคีย์คอมโบในรอบนี้
+                        last_keys = current_keys;
+                        tokio::time::sleep(poll_interval).await;
+                        continue;
                     }
                 }
             }
@@ -1117,9 +1166,19 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
             } else if !key_combo_buffer.is_empty() {
                 // ปล่อยปุ่มทั้งหมด - ตรวจสอบว่าควรบันทึกคอมโบหรือไม่
                 if key_combo_buffer.len() >= 2 && key_combo_buffer.len() <= 4 {
-                    // แปลงปุ่มเป็น string
+                    // แปลงปุ่มเป็น string และตรวจสอบว่ามีปุ่ม Shift หรือไม่
+                    let has_shift = key_combo_buffer.iter().any(|k| matches!(k, device_query::Keycode::LShift | device_query::Keycode::RShift));
+                    
+                    // แปลงคีย์เป็น lowercase ถ้าไม่มีการกด Shift
                     let key_combo = key_combo_buffer.iter()
-                        .map(|k| format!("{:?}", k))
+                        .map(|k| {
+                            let key_str = format!("{:?}", k);
+                            if !has_shift && is_letter_key(k) {
+                                key_str.to_lowercase()
+                            } else {
+                                key_str
+                            }
+                        })
                         .collect::<Vec<String>>()
                         .join("+");
                     
@@ -1134,17 +1193,25 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
                     println!("Recorded: Key combination {}", key_combo);
                 } else if key_combo_buffer.len() == 1 {
                     // บันทึกการกดปุ่มเดี่ยว
-                    let key_str = format!("{:?}", key_combo_buffer[0]);
+                    let key = key_combo_buffer[0];
+                    let key_str = format!("{:?}", key);
+                    
+                    // ตรวจสอบว่าเป็นตัวอักษรหรือไม่ และทำให้เป็นตัวพิมพ์เล็กเสมอ
+                    let lowercase_key = if is_letter_key(&key) {
+                        key_str.to_lowercase()
+                    } else {
+                        key_str
+                    };
                     
                     let step_data = json!({
                         "type": "key_press",
-                        "key": key_str,
+                        "key": lowercase_key,
                         "wait_time": 0.3,
                         "randomize": false
                     });
                     
                     add_recorded_step(&controller, "key_press", &step_data).await;
-                    println!("Recorded: Key press {}", key_str);
+                    println!("Recorded: Key press {} (as lowercase)", lowercase_key);
                 }
                 
                 // รีเซ็ตบัฟเฟอร์
@@ -1185,4 +1252,23 @@ async fn add_recorded_step(controller: &Arc<Mutex<AutomationController>>, step_t
         }));
         broadcast_to_clients(&controller.clients, steps_msg);
     }
+}
+
+// เพิ่มฟังก์ชันเพื่อตรวจสอบว่าคีย์เป็นตัวอักษรหรือไม่
+fn is_letter_key(key: &device_query::Keycode) -> bool {
+    matches!(key, 
+        device_query::Keycode::A | device_query::Keycode::B | 
+        device_query::Keycode::C | device_query::Keycode::D | 
+        device_query::Keycode::E | device_query::Keycode::F | 
+        device_query::Keycode::G | device_query::Keycode::H | 
+        device_query::Keycode::I | device_query::Keycode::J | 
+        device_query::Keycode::K | device_query::Keycode::L | 
+        device_query::Keycode::M | device_query::Keycode::N | 
+        device_query::Keycode::O | device_query::Keycode::P | 
+        device_query::Keycode::Q | device_query::Keycode::R | 
+        device_query::Keycode::S | device_query::Keycode::T | 
+        device_query::Keycode::U | device_query::Keycode::V | 
+        device_query::Keycode::W | device_query::Keycode::X | 
+        device_query::Keycode::Y | device_query::Keycode::Z
+    )
 } 

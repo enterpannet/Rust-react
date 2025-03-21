@@ -61,41 +61,42 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           </Checkbox>
         </Space>
 
-       
-
-          <Space className='flex flex-row items-center justify-between gap-5 w-full'>
-
-            <InputNumber
-              min={1}
-              max={100}
-              value={loopCount}
-              onChange={(value) => setLoopCount(value || 1)}
-              style={{ width: 150 }}
-              disabled={isRunning || infiniteLoop}
-              addonAfter="loops"
-            />
 
 
-            <Button
-              type="primary"
-              icon={infiniteLoop ? <ReloadOutlined /> : <PlayCircleOutlined />}
-              onClick={handleRunAutomation}
-              disabled={isRunning || steps.length === 0}
-            >
-              {infiniteLoop ? "Run" : "Run"}
-            </Button>
+        <Space className='flex flex-row items-center justify-between gap-5 w-full'>
 
-            {isRunning && (
-              <Button
-                danger
-                icon={<StopOutlined />}
-                onClick={onStopAutomation}
-              >
-                Stop
-              </Button>
-            )}
-          </Space>
-      
+          <InputNumber
+            min={1}
+            max={100}
+            value={loopCount}
+            onChange={(value) => setLoopCount(value || 1)}
+            style={{ width: 150 }}
+            disabled={isRunning || infiniteLoop}
+            addonAfter="loops"
+          />
+
+
+          <Button
+            type="primary"
+            icon={infiniteLoop ? <ReloadOutlined /> : <PlayCircleOutlined />}
+            onClick={handleRunAutomation}
+            disabled={isRunning || steps.length === 0}
+          >
+            {infiniteLoop ? "Run" : "Run"}
+          </Button>
+
+
+          <Button
+            danger
+            icon={<StopOutlined />}
+            onClick={onStopAutomation}
+            disabled={!isRunning}
+          >
+            Stop
+          </Button>
+
+        </Space>
+
       </div>
     </Card>
   );

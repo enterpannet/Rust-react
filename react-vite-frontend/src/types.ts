@@ -5,10 +5,19 @@ export interface MousePosition {
   y: number;
 }
 
+export interface StepGroup {
+  id: string;
+  name: string;
+  steps: Step[];
+  loopCount: number;
+  collapsed?: boolean;
+}
+
 export interface Step {
   id: string;
   type: string;
   data: StepData;
+  groupId?: string;
 }
 
 export interface StepData {
@@ -18,6 +27,10 @@ export interface StepData {
   y?: number;
   button?: string;
   key?: string;
+  isGroup?: boolean;
+  groupName?: string;
+  groupSteps?: Step[];
+  groupLoopCount?: number;
   [key: string]: any;
 }
 

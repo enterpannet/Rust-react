@@ -43,9 +43,9 @@ const StatusBar: React.FC<StatusBarProps> = ({
       <div>
         <Space>
           {isConnected ? (
-            <Badge status="success" text="Connected" icon={<CheckCircleOutlined />} />
+            <Badge status="success" text="Connected" />
           ) : (
-            <Badge status="error" text="Disconnected" icon={<DisconnectOutlined />} />
+            <Badge status="error" text="Disconnected" />
           )}
         </Space>
       </div>

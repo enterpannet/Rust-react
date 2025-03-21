@@ -287,9 +287,22 @@ pub async fn keyboard_press_key(key: &str) -> Result<(), Box<dyn std::error::Err
                 let c = key.chars().next().unwrap();
                 // แทนที่การใช้ key_click ด้วยการใช้ key_down และ key_up
                 println!("Typing single character: {}", c);
-                enigo.key_down(enigo::Key::Layout(c));
-                thread::sleep(Duration::from_millis(50));
-                enigo.key_up(enigo::Key::Layout(c));
+                
+                // จัดการกับอักขระทั้งตัวใหญ่และตัวเล็ก
+                if c.is_uppercase() {
+                    println!("Handling uppercase letter: {}", c);
+                    // ตัวอักษรตัวใหญ่ - ต้องกด Shift ด้วย
+                    enigo.key_down(enigo::Key::Shift);
+                    thread::sleep(Duration::from_millis(50));
+                    let lowercase_c = c.to_lowercase().next().unwrap();
+                    enigo.key_click(enigo::Key::Layout(lowercase_c));
+                    thread::sleep(Duration::from_millis(50));
+                    enigo.key_up(enigo::Key::Shift);
+                } else {
+                    // ตัวอักษรทั่วไป
+                    enigo.key_click(enigo::Key::Layout(c));
+                }
+                
                 thread::sleep(Duration::from_millis(50));
             } else {
                 // สำหรับคีย์พิเศษ

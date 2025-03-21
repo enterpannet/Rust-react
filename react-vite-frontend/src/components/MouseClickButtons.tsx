@@ -154,6 +154,9 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
     }
     
     if (ws && ws instanceof WebSocket) {
+      // Add debug log
+      console.log(`Performing shortcut: ${shortcut.name}`);
+      
       // การรวม modifiers และ key ให้เป็น command
       if (shortcut.name === 'Copy') {
         ws.send(JSON.stringify({
@@ -166,6 +169,7 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
         }));
         toast.info('ส่งคำสั่ง Paste (Ctrl+V) ไปยัง backend');
       } else if (shortcut.name === 'Select All') {
+        console.log('Sending Select All command explicitly');
         ws.send(JSON.stringify({
           command: "perform_select_all"
         }));
@@ -302,49 +306,40 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
     setClipboardModalVisible(false);
   };
 
-  // Add keyboard shortcut functionality
+  // Add keyboard shortcut listener to MouseClickButtons component
   useEffect(() => {
+    // Only set up keyboard shortcuts if connected and onAddStep is available
+    if (!isConnected || !onAddStep) {
+      return;
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only process if connected to backend
-      if (!isConnected) return;
-      
-      // Prevent shortcuts when user is typing in an input field
+      // Skip if the user is typing in an input field
       if (event.target instanceof HTMLInputElement || 
           event.target instanceof HTMLTextAreaElement) {
         return;
       }
 
-      // Handle mouse click shortcuts
+      // Mouse click shortcuts (F1, F2, F3)
       if (event.key === 'F1') {
-        event.preventDefault();
         addMouseClickStep('left');
+        event.preventDefault();
       } else if (event.key === 'F2') {
-        event.preventDefault();
         addMouseClickStep('middle');
+        event.preventDefault();
       } else if (event.key === 'F3') {
-        event.preventDefault();
         addMouseClickStep('right');
-      }
-      
-      // Handle shortcuts execution
-      // F5-F12 for the first 8 shortcuts in the list
-      const functionKeys = ['F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
-      const keyIndex = functionKeys.indexOf(event.key);
-      
-      if (keyIndex !== -1 && shortcuts[keyIndex]) {
         event.preventDefault();
-        performShortcut(shortcuts[keyIndex]);
       }
+      
+      // We no longer handle F5-F12 shortcuts for Copy, Paste, etc.
     };
-    
-    // Add the event listener
+
     window.addEventListener('keydown', handleKeyDown);
-    
-    // Clean up
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isConnected, shortcuts, mousePosition]); // Dependencies include what we need from the component
+  }, [isConnected, onAddStep, mousePosition]);
 
   return (
     <Card title="การควบคุมอุปกรณ์" className="w-full">
@@ -353,14 +348,13 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
           <h4 className="font-medium">เมาส์</h4>
           <div className="flex flex-col justify-center gap-2">
             <Button 
-       
               onClick={() => addMouseClickStep('left')}
               disabled={!isConnected || !onAddStep}
               className="bg-blue-500 text-white"
             >
               <div className="flex items-center justify-between w-full">
                 <span>+ คลิกซ้าย</span>
-                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white">F1</kbd>
+                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white" title="ปุ่มลัดควบคุม - ไม่ถูกบันทึกขณะกำลังบันทึก">F1</kbd>
               </div>
             </Button>
             <Button 
@@ -370,7 +364,7 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
             >
               <div className="flex items-center justify-between w-full">
                 <span>+ คลิกกลาง</span>
-                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white">F2</kbd>
+                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white" title="ปุ่มลัดควบคุม - ไม่ถูกบันทึกขณะกำลังบันทึก">F2</kbd>
               </div>
             </Button>
             <Button 
@@ -380,7 +374,7 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
             >
               <div className="flex items-center justify-between w-full">
                 <span>+ คลิกขวา</span>
-                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white">F3</kbd>
+                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white" title="ปุ่มลัดควบคุม - ไม่ถูกบันทึกขณะกำลังบันทึก">F3</kbd>
               </div>
             </Button>
           </div>
@@ -411,9 +405,6 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
                   >
                     <div className="flex items-center justify-between w-full">
                       <span>{shortcut.name}</span>
-                      {index < 8 && (
-                        <kbd className="px-2 py-0.5 bg-gray-100 rounded text-xs">F{index + 5}</kbd>
-                      )}
                     </div>
                   </Button>
                 </Tooltip>

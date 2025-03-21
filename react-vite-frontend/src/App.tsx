@@ -12,6 +12,7 @@ import WaitTimePanel from './components/WaitTimePanel';
 import RandomTimingPanel from './components/RandomTimingPanel';
 import StepsList from './components/StepsList';
 import MouseClickButtons from './components/MouseClickButtons';
+import ProgressPanel from './components/ProgressPanel';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -26,6 +27,8 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [currentStep, setCurrentStep] = useState<number | null>(null);
   const [status, setStatus] = useState<string>("idle");
+  const [completedSteps, setCompletedSteps] = useState<number>(0);
+  const [totalSteps, setTotalSteps] = useState<number>(0);
 
   // Steps and other details
   const [steps, setSteps] = useState<Step[]>([]);
@@ -106,6 +109,14 @@ function App() {
             }
           } else if (data.type === "step_executing") {
             setCurrentStep(data.data.index);
+            // เพิ่มการอัปเดตขั้นตอนที่สำเร็จ
+            if (data.data.index > 0) {
+              setCompletedSteps(data.data.index);
+            }
+            // เพิ่มการอัปเดตจำนวนขั้นตอนทั้งหมด
+            if (data.data.total_steps) {
+              setTotalSteps(data.data.total_steps);
+            }
           } else if (data.type === "mouse_position") {
             // Only update if the position is not 0,0 and different from current
             if (data.data.x !== 0 || data.data.y !== 0) {
@@ -114,6 +125,9 @@ function App() {
           } else if (data.type === "automation_completed") {
             setIsRunning(false);
             setCurrentStep(null);
+            // รีเซ็ตค่าเมื่อทำงานเสร็จ
+            setCompletedSteps(0);
+            setTotalSteps(0);
             showMessage('Automation completed!', 'success');
           }
         } catch (err) {
@@ -235,10 +249,37 @@ function App() {
   // Function to run automation
   const runAutomation = () => {
     if (ws && wsConnected && steps.length > 0) {
-      ws.send(JSON.stringify({
-        type: "run_automation",
-        data: { loop_count: loopCount }
-      }));
+      // สร้างรายการขั้นตอนที่จะรัน โดยคลี่กลุ่มออกมา
+      let processedSteps: Step[] = [];
+      
+      // วนลูปผ่านทุกขั้นตอน
+      steps.forEach(step => {
+        // ถ้าเป็นขั้นตอนปกติ ให้เพิ่มเข้าไปตามปกติ
+        if (step.type !== 'group') {
+          processedSteps.push(step);
+        } 
+        // ถ้าเป็นกลุ่ม ให้เพิ่มขั้นตอนในกลุ่มเข้าไปตามจำนวนรอบที่กำหนด
+        else if (step.type === 'group') {
+          const groupSteps = step.data.groupSteps || [];
+          const loopCount = step.data.groupLoopCount || 1;
+          
+          // ทำซ้ำตามจำนวนรอบ
+          for (let i = 0; i < loopCount; i++) {
+            // เพิ่มทุกขั้นตอนในกลุ่ม
+            processedSteps.push(...groupSteps);
+          }
+        }
+      });
+      
+      if (processedSteps.length > 0) {
+        ws.send(JSON.stringify({
+          type: "run_automation",
+          data: { 
+            loop_count: loopCount,
+            steps: processedSteps  // ส่งรายการ steps ที่คลี่กลุ่มแล้ว (ทั้ง object ไม่ใช่แค่ id)
+          }
+        }));
+      }
     } else {
       showMessage("Cannot run automation: WebSocket not connected or no steps defined", 'error');
     }
@@ -257,10 +298,12 @@ function App() {
   const toggleRecording = () => {
     if (ws && wsConnected) {
       if (!isRecording) {
-        // Start recording
+        // Start recording - ONLY send the recording command, nothing else
+        console.log("Starting recording - No other actions should trigger");
         ws.send(JSON.stringify({ type: "start_recording" }));
       } else {
-        // Stop recording
+        // Stop recording - ONLY send the stop recording command
+        console.log("Stopping recording - No other actions should trigger");
         ws.send(JSON.stringify({ type: "stop_recording" }));
       }
     } else {
@@ -272,10 +315,36 @@ function App() {
   const runSelectedSteps = (selectedIds: string[]) => {
     if (ws && wsConnected && selectedIds.length > 0) {
       console.log('Running selected steps:', selectedIds);
-      ws.send(JSON.stringify({
-        type: 'run_selected_steps',
-        data: { step_ids: selectedIds }
-      }));
+      
+      // สร้างรายการขั้นตอนที่จะรัน โดยคลี่กลุ่มออกมา
+      let processedSteps: Step[] = [];
+      
+      selectedIds.forEach(stepId => {
+        const step = steps.find(s => s.id === stepId);
+        
+        // ถ้าเป็นขั้นตอนปกติ ให้เพิ่มเข้าไปตามปกติ
+        if (step && step.type !== 'group') {
+          processedSteps.push(step);
+        } 
+        // ถ้าเป็นกลุ่ม ให้เพิ่มขั้นตอนในกลุ่มเข้าไปตามจำนวนรอบที่กำหนด
+        else if (step && step.type === 'group') {
+          const groupSteps = step.data.groupSteps || [];
+          const loopCount = step.data.groupLoopCount || 1;
+          
+          // ทำซ้ำตามจำนวนรอบ
+          for (let i = 0; i < loopCount; i++) {
+            // เพิ่มทุกขั้นตอนในกลุ่ม
+            processedSteps.push(...groupSteps);
+          }
+        }
+      });
+      
+      if (processedSteps.length > 0) {
+        ws.send(JSON.stringify({
+          type: 'run_selected_steps',
+          data: { steps: processedSteps }
+        }));
+      }
     } else {
       showMessage('Cannot run selected steps: WebSocket not connected or no steps selected', 'error');
     }
@@ -375,6 +444,59 @@ function App() {
     console.log('Selected steps:', selectedIds); // สำหรับ debug
   };
 
+  // เพิ่มฟังก์ชันใหม่สำหรับเพิ่ม wait step ระหว่างกลางของ item ที่เลือก
+  const handleAddWaitBetweenSelected = (waitTime: number) => {
+    if (selectedStepIds.length < 2) return;
+    
+    console.log('handleAddWaitBetweenSelected called with waitTime:', waitTime);
+    console.log('selectedStepIds:', selectedStepIds);
+    
+    // เรียงลำดับ selectedSteps ตามตำแหน่งใน steps
+    const sortedSelectedIndexes = selectedStepIds
+      .map(id => steps.findIndex(step => step.id === id))
+      .sort((a, b) => a - b);
+    
+    console.log('sortedSelectedIndexes:', sortedSelectedIndexes);
+    
+    // สร้าง steps ใหม่โดยแทรก wait steps ระหว่าง selected steps
+    const newSteps = [...steps];
+    let offset = 0;
+    
+    for (let i = 1; i < sortedSelectedIndexes.length; i++) {
+      const insertPosition = sortedSelectedIndexes[i-1] + 1 + offset;
+      
+      console.log('Inserting wait step at position:', insertPosition);
+      
+      // สร้าง wait step ใหม่
+      const newWaitStep: Step = {
+        id: Date.now() + Math.random().toString(36).substring(2, 9) + i,
+        type: 'wait',
+        data: { 
+          wait_time: waitTime,
+          randomize: randomTimingEnabled
+        }
+      };
+      
+      // แทรก wait step เข้าไปในตำแหน่งที่ต้องการ
+      newSteps.splice(insertPosition, 0, newWaitStep);
+      offset++; // เพิ่ม offset เนื่องจากเราได้เพิ่ม step ใหม่เข้าไป
+    }
+    
+    console.log('New steps array:', newSteps);
+    
+    // ส่ง steps ใหม่ไปยัง backend
+    if (ws && ws instanceof WebSocket) {
+      ws.send(JSON.stringify({
+        type: 'update_steps_order',
+        data: { steps: newSteps }
+      }));
+    } else {
+      // ถ้าไม่มีการเชื่อมต่อกับ backend ให้อัพเดต steps โดยตรง
+      setSteps(newSteps);
+      showMessage('Added wait steps between selected items', 'success');
+    }
+  };
+
   return (
     <div className="flex justify-center items-center min-h-screen bg-gray-100">
       <Layout className="w-[1040px] h-[800px] overflow-hidden shadow-lg relative">
@@ -400,6 +522,8 @@ function App() {
                   waitTime={waitTime}
                   onWaitTimeChange={setWaitTime}
                   onAddWaitTime={addStep}
+                  selectedSteps={selectedStepIds}
+                  onAddWaitBetweenSelected={handleAddWaitBetweenSelected}
                 />
 
                
@@ -418,6 +542,7 @@ function App() {
                     onDeleteSelectedSteps={deleteSelectedSteps}
                     onCopySelectedSteps={handleCopySelectedSteps}
                     onPasteSteps={handlePasteSteps}
+                    onStepsSelection={handleStepsSelection}
                   />
                 </div>
                 
@@ -433,12 +558,23 @@ function App() {
               </div>
             </Col>
             <Col span={8}>
-              <MouseClickButtons 
-                isConnected={Boolean(ws)} 
-                onAddStep={addStep} 
-                mousePosition={mousePosition}
-                ws={ws}
-              />
+              <div className="flex flex-col gap-3">
+                <MouseClickButtons 
+                  isConnected={Boolean(ws)} 
+                  onAddStep={addStep} 
+                  mousePosition={mousePosition}
+                  ws={ws}
+                />
+
+                <ProgressPanel
+                  steps={steps}
+                  currentStep={currentStep}
+                  isRunning={isRunning}
+                  status={status}
+                  completedSteps={completedSteps}
+                  totalSteps={totalSteps}
+                />
+              </div>
             </Col>
           </Row>
         </Content>

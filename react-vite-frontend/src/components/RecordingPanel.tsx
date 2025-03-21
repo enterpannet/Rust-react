@@ -29,8 +29,11 @@ const RecordingPanel: React.FC<RecordingPanelProps> = ({
   // Add keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Check if F7 key is pressed (key code 118)
-      if (event.key === 'F7' || event.keyCode === 118) {
+      // Only handle F7 key presses and only if not typing in a form field
+      if ((event.key === 'F7' || event.keyCode === 118) &&
+          !(event.target instanceof HTMLInputElement || 
+            event.target instanceof HTMLTextAreaElement)) {
+        
         // Set a global flag to tell the recording system to ignore this F7 press
         // @ts-ignore - Adding property to window object
         window.__ignoreNextF7ForRecording = true;
@@ -91,7 +94,7 @@ const RecordingPanel: React.FC<RecordingPanelProps> = ({
           >
             {isRecording ? "หยุดบันทึก " : "เริ่มบันทึก"}
           </Button>
-          <span className="ml-3 text-sm text-gray-500">Shortcut: <kbd className="px-2 py-1 bg-gray-100 border rounded">F7</kbd></span>
+          <span className="ml-3 text-sm text-gray-500">Shortcut: <kbd className="px-2 py-1 bg-gray-100 border rounded" title="ปุ่มลัดควบคุม (ไม่ถูกบันทึกเป็นขั้นตอน)">F7</kbd></span>
         </div>
         
         {!isConnected && (

@@ -1,21 +1,25 @@
 import React from 'react';
-import { Card, Slider, InputNumber, Typography, Space, Button } from 'antd';
-import { ClockCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { Card, Slider, InputNumber, Typography, Space, Button, Tooltip } from 'antd';
+import { ClockCircleOutlined, PlusOutlined, PlusSquareOutlined } from '@ant-design/icons';
 
 const { Title } = Typography;
 
 interface WaitTimePanelProps {
   waitTime: number;
   isConnected: boolean;
+  selectedSteps: string[];
   onWaitTimeChange: (value: number) => void;
   onAddWaitTime: (stepType: string, data?: Record<string, any>) => void;
+  onAddWaitBetweenSelected?: (waitTime: number) => void;
 }
 
 const WaitTimePanel: React.FC<WaitTimePanelProps> = ({ 
   waitTime, 
   isConnected,
+  selectedSteps = [],
   onWaitTimeChange,
-  onAddWaitTime
+  onAddWaitTime,
+  onAddWaitBetweenSelected
 }) => {
   const handleInputChange = (value: number | null) => {
     if (value !== null) {
@@ -25,6 +29,12 @@ const WaitTimePanel: React.FC<WaitTimePanelProps> = ({
   
   const handleAddWaitTime = () => {
     onAddWaitTime('wait', { wait_time: waitTime });
+  };
+
+  const handleAddWaitBetweenSelected = () => {
+    if (onAddWaitBetweenSelected && selectedSteps.length >= 2) {
+      onAddWaitBetweenSelected(waitTime);
+    }
   };
   
   return (
@@ -44,7 +54,7 @@ const WaitTimePanel: React.FC<WaitTimePanelProps> = ({
       <div className="flex items-center gap-4">
         <Slider
           min={0}
-          max={10}
+          max={120}
           step={0.1}
           value={waitTime}
           onChange={handleInputChange}
@@ -54,7 +64,7 @@ const WaitTimePanel: React.FC<WaitTimePanelProps> = ({
         />
         <InputNumber
           min={0}
-          max={60}
+          max={100000}
           step={0.1}
           value={waitTime}
           onChange={handleInputChange}
@@ -64,7 +74,20 @@ const WaitTimePanel: React.FC<WaitTimePanelProps> = ({
         />
       </div>
       
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex flex-col justify-end gap-2">
+  
+          <Tooltip title="Add wait time between selected steps">
+            <Button
+              type="primary"
+              icon={<PlusSquareOutlined />}
+              onClick={handleAddWaitBetweenSelected}
+              disabled={!isConnected || selectedSteps.length < 2}
+            >
+              Add Between Selected
+            </Button>
+          </Tooltip>
+       
+        
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -75,7 +98,7 @@ const WaitTimePanel: React.FC<WaitTimePanelProps> = ({
         </Button>
       </div>
       
-      <div className="mt-4">
+      {/* <div className="mt-4">
         <p className="text-xs text-gray-500">
           This delay will be applied after each action in your automation sequence.
           Longer delays give you more time to observe each step.
@@ -86,7 +109,7 @@ const WaitTimePanel: React.FC<WaitTimePanelProps> = ({
             Connect to the server to modify wait time
           </p>
         )}
-      </div>
+      </div> */}
     </Card>
   );
 };
