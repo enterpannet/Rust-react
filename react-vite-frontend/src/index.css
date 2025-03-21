@@ -17,6 +17,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ป้องกันการเลือกข้อความ */
+* {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* อนุญาตให้เลือกข้อความในพื้นที่ที่จำเป็น เช่น input, textarea */
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
 a {
   font-weight: 500;
   color: #646cff;

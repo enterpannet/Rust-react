@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layout, Typography, Row, Col, notification, Card, Space, Badge, InputNumber, Button } from 'antd';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { CloseCircleTwoTone, CheckCircleTwoTone } from '@ant-design/icons';
 
 import { MousePosition, Step, SocketType } from './types';
 import StatusBar from './components/StatusBar';
@@ -496,6 +497,21 @@ function App() {
       showMessage('Added wait steps between selected items', 'success');
     }
   };
+
+  useEffect(() => {
+    // ป้องกันการคลิกขวา
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    document.addEventListener('contextmenu', handleContextMenu);
+    
+    // ทำความสะอาดเมื่อคอมโพเนนต์ถูกทำลาย
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-gray-100">
