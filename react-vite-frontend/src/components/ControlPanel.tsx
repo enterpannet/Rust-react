@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Button, InputNumber, Space, Typography, Badge, Checkbox } from 'antd';
-import { 
+import {
   PlayCircleOutlined,
   StopOutlined,
   ReloadOutlined
@@ -29,7 +29,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onStopAutomation
 }) => {
   const [infiniteLoop, setInfiniteLoop] = useState(false);
-  
+
   const handleRunAutomation = () => {
     // ถ้าเป็นโหมดไม่จำกัดรอบ ส่งค่า -1 ไปยัง backend
     if (infiniteLoop) {
@@ -43,55 +43,59 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       onRunAutomation();
     }
   };
-  
+
   return (
     <Card className="w-full">
-      <div className="flex items-center justify-between">
-        <Space>
-          <Badge status={status === 'idle' ? 'default' : status === 'running' ? 'processing' : 'warning'} />
-          <span className="font-semibold">Status: {status}</span>
-        </Space>
-        
-        <Space>
-          <Checkbox 
+      <div className="flex flex-col items-center w-full">
+        <Space className='flex flex-row items-center justify-between gap-5 w-full'>
+          <Space>
+            <Badge status={status === 'idle' ? 'default' : status === 'running' ? 'processing' : 'warning'} />
+            <span className="font-semibold">Status: {status}</span>
+          </Space>
+          <Checkbox
             checked={infiniteLoop}
             onChange={(e) => setInfiniteLoop(e.target.checked)}
             disabled={isRunning}
           >
-           ไม่จำกัดรอบ
+            ไม่จำกัดรอบ
           </Checkbox>
-          
+        </Space>
+
        
-            <InputNumber 
-              min={1} 
-              max={100} 
-              value={loopCount} 
-              onChange={(value) => setLoopCount(value || 1)} 
+
+          <Space className='flex flex-row items-center justify-between gap-5 w-full'>
+
+            <InputNumber
+              min={1}
+              max={100}
+              value={loopCount}
+              onChange={(value) => setLoopCount(value || 1)}
               style={{ width: 150 }}
               disabled={isRunning || infiniteLoop}
               addonAfter="loops"
             />
-     
-          
-          <Button 
-            type="primary" 
-            icon={infiniteLoop ? <ReloadOutlined /> : <PlayCircleOutlined />}
-            onClick={handleRunAutomation}
-            disabled={isRunning || steps.length === 0}
-          >
-            {infiniteLoop ? "Run" : "Run"}
-          </Button>
-          
-          {isRunning && (
-            <Button 
-              danger 
-              icon={<StopOutlined />}
-              onClick={onStopAutomation}
+
+
+            <Button
+              type="primary"
+              icon={infiniteLoop ? <ReloadOutlined /> : <PlayCircleOutlined />}
+              onClick={handleRunAutomation}
+              disabled={isRunning || steps.length === 0}
             >
-              Stop
+              {infiniteLoop ? "Run" : "Run"}
             </Button>
-          )}
-        </Space>
+
+            {isRunning && (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={onStopAutomation}
+              >
+                Stop
+              </Button>
+            )}
+          </Space>
+      
       </div>
     </Card>
   );

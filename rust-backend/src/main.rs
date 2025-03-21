@@ -4,8 +4,14 @@ mod websocket;
 mod models;
 mod handlers;
 
-use tokio::runtime::Runtime;
+#[allow(unused_imports)]
 use warp::Filter;
+#[allow(unused_imports)]
+use std::sync::Arc;
+#[allow(unused_imports)]
+use tokio::sync::Mutex;
+#[allow(unused_imports)]
+use crate::automation::AutomationController;
 
 #[tokio::main]
 async fn main() {

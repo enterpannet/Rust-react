@@ -416,6 +416,8 @@ async fn handle_websocket_message(
                 // เริ่มการบันทึก
                 if !controller.is_recording {
                     controller.is_recording = true;
+                    // ตั้งค่า flag ว่า F7 ถูกใช้เพื่อเปิดการบันทึก
+                    controller.is_recording_toggle_pending = true;
                     
                     // เพิ่มตัวบันทึกเหตุการณ์เมาส์และแป้นพิมพ์
                     let controller_clone = automation_controller.clone();
@@ -424,7 +426,7 @@ async fn handle_websocket_message(
                     // แจ้งการอัปเดต
                     let status_msg = create_message("status_update", json!({
                         "status": "recording",
-                        "message": "Recording started - Capturing mouse movements, clicks, and keyboard presses"
+                        "message": "Recording started - Capturing mouse clicks and keyboard presses"
                     }));
                     broadcast_to_clients(&controller.clients, status_msg);
                     println!("Recording started");
@@ -434,6 +436,8 @@ async fn handle_websocket_message(
                 // หยุดการบันทึก
                 if controller.is_recording {
                     controller.is_recording = false;
+                    // ตั้งค่า flag ว่า F7 ถูกใช้เพื่อปิดการบันทึก
+                    controller.is_recording_toggle_pending = true;
                     
                     // แจ้งการอัปเดต
                     let status_msg = create_message("status_update", json!({
@@ -449,6 +453,8 @@ async fn handle_websocket_message(
                 if !controller.is_recording {
                     // เริ่มการบันทึก
                     controller.is_recording = true;
+                    // ตั้งค่า flag ว่า F7 ถูกใช้เพื่อเปิดการบันทึก
+                    controller.is_recording_toggle_pending = true;
                     
                     // เพิ่มตัวบันทึกเหตุการณ์เมาส์และแป้นพิมพ์
                     let controller_clone = automation_controller.clone();
@@ -457,13 +463,15 @@ async fn handle_websocket_message(
                     // แจ้งการอัปเดต
                     let status_msg = create_message("status_update", json!({
                         "status": "recording",
-                        "message": "Recording started - Capturing mouse movements, clicks, and keyboard presses"
+                        "message": "Recording started - Capturing mouse clicks and keyboard presses"
                     }));
                     broadcast_to_clients(&controller.clients, status_msg);
                     println!("Recording started (from toggle)");
                 } else {
                     // หยุดการบันทึก
                     controller.is_recording = false;
+                    // ตั้งค่า flag ว่า F7 ถูกใช้เพื่อปิดการบันทึก
+                    controller.is_recording_toggle_pending = true;
                     
                     // แจ้งการอัปเดต
                     let status_msg = create_message("status_update", json!({
@@ -557,6 +565,7 @@ fn broadcast_to_clients(
 }
 
 // ฟังก์ชันสำหรับการส่งตำแหน่งเมาส์เรียลไทม์
+#[allow(dead_code)]
 pub fn start_mouse_position_tracking(automation_controller: std::sync::Arc<tokio::sync::Mutex<crate::automation::AutomationController>>) {
     // สร้าง task ใหม่สำหรับการติดตามตำแหน่งเมาส์
     tokio::spawn(async move {
@@ -787,15 +796,23 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
     // สร้าง thread สำหรับติดตามตำแหน่งเมาส์
     tokio::spawn(async move {
         let device_state = DeviceState::new();
-        let mut last_position = (0, 0);
+        let mut _last_position = (0, 0); // Prefixed with underscore to indicate intentionally unused
         let mut last_mouse_buttons = vec![false; 10]; // เก็บสถานะปุ่มเมาส์ล่าสุด
         let mut last_keys = device_state.get_keys();
-        
-        // ตั้งค่าขั้นต่ำของการเคลื่อนไหวเมาส์ที่จะบันทึก (หน่วยพิกเซล)
-        const MIN_MOUSE_MOVEMENT: i32 = 5;
+        let mut key_combo_buffer = Vec::new(); // เก็บปุ่มที่กำลังถูกกดพร้อมกัน
+        let mut key_combo_timer = std::time::Instant::now(); // จับเวลาการกดปุ่มพร้อมกัน
+        let mut mouse_click_cooldown = false; // ป้องกันการบันทึกซ้ำ
+        let mut last_click_time = std::time::Instant::now(); // เวลาคลิกล่าสุด
         
         // จับเหตุการณ์ทุก 50 มิลลิวินาที (20 FPS)
         let poll_interval = std::time::Duration::from_millis(50);
+        
+        // เริ่มด้วยข้อความว่าเริ่มบันทึก
+        println!("Event recorder started, tracking mouse clicks and key presses");
+        println!("DEBUG: Press each mouse button to see which index it corresponds to");
+        
+        // เพิ่มฟังก์ชันเพื่อช่วยตรวจสอบ button index
+        let mut test_mode_counter = 20; // จำนวนรอบที่จะให้แสดง debug info
         
         loop {
             // เช็คว่ายังอยู่ในโหมดบันทึกหรือไม่
@@ -811,66 +828,171 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
             
             // ตรวจสอบตำแหน่งเมาส์
             let current_position = crate::mouse_keyboard::get_cursor_position();
-            let dx = (current_position.0 - last_position.0).abs();
-            let dy = (current_position.1 - last_position.1).abs();
             
-            // บันทึกการเคลื่อนไหวเมาส์ถ้ามีการเปลี่ยนแปลงมากกว่าขั้นต่ำ
-            if dx > MIN_MOUSE_MOVEMENT || dy > MIN_MOUSE_MOVEMENT {
-                // เพิ่มขั้นตอนการเคลื่อนไหวเมาส์
-                let step_data = json!({
-                    "type": "mouse_move",
-                    "x": current_position.0,
-                    "y": current_position.1,
-                    "wait_time": 0.1,  // เวลารอสั้นๆ
-                    "randomize": false
-                });
-                
-                // ส่งคำสั่งเพิ่มขั้นตอน
-                add_recorded_step(&controller, "mouse_move", &step_data).await;
-                
-                last_position = current_position;
-            }
+            // อัปเดตตำแหน่งเมาส์ล่าสุด (ใช้เพื่อการอ้างอิงในอนาคต)
+            _last_position = current_position;
             
             // ตรวจสอบการคลิกเมาส์โดยใช้ device_query
             let mouse_state = device_state.get_mouse();
             
-            // ตรวจสอบปุ่มซ้าย (index อาจแตกต่างขึ้นอยู่กับไลบรารี)
-            if *mouse_state.button_pressed.get(0).unwrap_or(&false) && !last_mouse_buttons[0] {
-                let step_data = json!({
-                    "type": "mouse_click",
-                    "button": "left",
-                    "wait_time": 0.5,
-                    "randomize": false
-                });
-                
-                add_recorded_step(&controller, "mouse_click", &step_data).await;
-                println!("Recorded: Left click at {:?}", current_position);
+            // Debug mode - แสดงข้อมูลปุ่มเมาส์ทุกครั้งที่มีการกด
+            if test_mode_counter > 0 && !mouse_state.button_pressed.is_empty() {
+                println!("DEBUG - Mouse button state: {:?}", mouse_state.button_pressed);
+                for (i, &pressed) in mouse_state.button_pressed.iter().enumerate() {
+                    if pressed {
+                        println!("DEBUG - Button at index {} is pressed", i);
+                    }
+                }
+                test_mode_counter -= 1;
             }
             
-            // ตรวจสอบปุ่มขวา
-            if *mouse_state.button_pressed.get(1).unwrap_or(&false) && !last_mouse_buttons[1] {
-                let step_data = json!({
-                    "type": "mouse_click",
-                    "button": "right",
-                    "wait_time": 0.5,
-                    "randomize": false
-                });
-                
-                add_recorded_step(&controller, "mouse_click", &step_data).await;
-                println!("Recorded: Right click at {:?}", current_position);
+            // ตรวจสอบ cooldown การคลิก (ป้องกันการบันทึกซ้ำ)
+            if mouse_click_cooldown {
+                if last_click_time.elapsed().as_millis() > 300 { // รอ 300ms ก่อนจะให้บันทึกการคลิกใหม่ได้
+                    mouse_click_cooldown = false;
+                } else {
+                    // ข้ามการตรวจสอบการคลิกในรอบนี้
+                    // อัปเดตสถานะปุ่มเมาส์เพื่อเตรียมพร้อมสำหรับการคลิกถัดไป
+                    last_mouse_buttons = vec![false; 10];
+                    for (i, &pressed) in mouse_state.button_pressed.iter().enumerate() {
+                        if i < last_mouse_buttons.len() {
+                            last_mouse_buttons[i] = pressed;
+                        }
+                    }
+                    
+                    // ตรวจสอบการกดปุ่มคีย์บอร์ด (ยังคงตรวจสอบปุ่มคีย์บอร์ดตามปกติ)
+                    let current_keys = device_state.get_keys();
+                    
+                    // เพิ่มการตรวจสอบพิเศษสำหรับปุ่ม F7 และปุ่มฟังก์ชันอื่นๆ
+                    if !current_keys.is_empty() {
+                        // ตรวจสอบว่ามีการกดปุ่มฟังก์ชันหรือไม่
+                        let has_function_key = current_keys.iter().any(|k| {
+                            matches!(k, 
+                                device_query::Keycode::F1 | device_query::Keycode::F2 | 
+                                device_query::Keycode::F3 | device_query::Keycode::F4 | 
+                                device_query::Keycode::F5 | device_query::Keycode::F6 | 
+                                device_query::Keycode::F7 | device_query::Keycode::F8 | 
+                                device_query::Keycode::F9 | device_query::Keycode::F10 | 
+                                device_query::Keycode::F11 | device_query::Keycode::F12
+                            )
+                        });
+                        
+                        // ถ้ามีการกดปุ่มฟังก์ชัน ให้แยกออกมาบันทึกแค่ปุ่มฟังก์ชันเท่านั้น
+                        if has_function_key {
+                            // แยกเฉพาะปุ่มฟังก์ชัน
+                            let function_keys: Vec<_> = current_keys.iter().filter(|k| {
+                                matches!(k, 
+                                    device_query::Keycode::F1 | device_query::Keycode::F2 | 
+                                    device_query::Keycode::F3 | device_query::Keycode::F4 | 
+                                    device_query::Keycode::F5 | device_query::Keycode::F6 | 
+                                    device_query::Keycode::F7 | device_query::Keycode::F8 | 
+                                    device_query::Keycode::F9 | device_query::Keycode::F10 | 
+                                    device_query::Keycode::F11 | device_query::Keycode::F12
+                                )
+                            }).collect();
+                            
+                            // ถ้ามีปุ่มฟังก์ชันเพียงปุ่มเดียว ให้บันทึกเฉพาะปุ่มนั้น
+                            if function_keys.len() == 1 {
+                                // ตรวจสอบว่าเป็นปุ่ม F7 ที่ใช้สำหรับเริ่มหรือหยุดการบันทึกหรือไม่
+                                // ถ้าเป็น F7 และเพิ่งเริ่มต้น/หยุดการบันทึก ให้ข้ามการบันทึกคีย์นี้
+                                let is_f7 = matches!(function_keys[0], device_query::Keycode::F7);
+                                
+                                // ถ้าเป็น F7 ที่ใช้เป็น shortcut ควบคุมการบันทึก ให้ข้ามไป
+                                if is_f7 && controller.lock().await.is_recording_toggle_pending {
+                                    println!("Ignoring F7 key as it was used to toggle recording");
+                                    
+                                    // รีเซ็ตค่า recording_toggle_pending
+                                    {
+                                        let mut controller = controller.lock().await;
+                                        controller.is_recording_toggle_pending = false;
+                                    }
+                                    
+                                    // ข้ามการตรวจสอบคีย์คอมโบในรอบนี้
+                                    last_keys = current_keys;
+                                    tokio::time::sleep(poll_interval).await;
+                                    continue;
+                                }
+                                
+                                // บันทึกปุ่มฟังก์ชันตามปกติ
+                                let key_str = format!("{:?}", function_keys[0]);
+                                
+                                let step_data = json!({
+                                    "type": "key_press",
+                                    "key": key_str,
+                                    "wait_time": 0.3,
+                                    "randomize": false
+                                });
+                                
+                                add_recorded_step(&controller, "key_press", &step_data).await;
+                                println!("Recorded: Function key {}", key_str);
+                            }
+                        }
+                    }
+                }
             }
             
-            // ตรวจสอบปุ่มกลาง
-            if *mouse_state.button_pressed.get(2).unwrap_or(&false) && !last_mouse_buttons[2] {
-                let step_data = json!({
+            // ฟังก์ชันช่วยบันทึกตำแหน่งเมาส์และการคลิก
+            async fn record_mouse_click(
+                controller: &Arc<Mutex<AutomationController>>, 
+                position: (i32, i32),
+                button: &str
+            ) {
+                // 1. บันทึกตำแหน่งเมาส์
+                let move_data = json!({
+                    "type": "mouse_move",
+                    "x": position.0,
+                    "y": position.1,
+                    "wait_time": 0.2,
+                    "randomize": false
+                });
+                
+                add_recorded_step(controller, "mouse_move", &move_data).await;
+                println!("Recorded: Mouse position ({}, {})", position.0, position.1);
+                
+                // 2. บันทึกการคลิก
+                let click_data = json!({
                     "type": "mouse_click",
-                    "button": "middle",
+                    "button": button,
                     "wait_time": 0.5,
                     "randomize": false
                 });
                 
-                add_recorded_step(&controller, "mouse_click", &step_data).await;
-                println!("Recorded: Middle click at {:?}", current_position);
+                add_recorded_step(controller, "mouse_click", &click_data).await;
+                println!("Recorded: {} mouse click at position ({}, {})", button, position.0, position.1);
+            }
+            
+            // ปรับปรุงการตรวจจับการคลิกเมาส์
+            let mut button_clicked = false;
+            
+            // แก้ไขการตรวจจับปุ่มซ้าย - index 1 คือซ้าย (ถูกต้องแล้ว)
+            if mouse_state.button_pressed.get(1).map_or(false, |&pressed| pressed) && !last_mouse_buttons[1] {
+                record_mouse_click(&controller, current_position, "left").await;
+                button_clicked = true;
+            }
+            
+            // แก้ไขการตรวจจับปุ่มขวา - อาจเป็น index 2 ตามที่ผู้ใช้รายงาน
+            if !button_clicked && mouse_state.button_pressed.get(2).map_or(false, |&pressed| pressed) && !last_mouse_buttons[2] {
+                record_mouse_click(&controller, current_position, "right").await;
+                button_clicked = true;
+            }
+            
+            // ตรวจจับปุ่มกลาง - แก้ไขเป็น index 0 หรือ index 3, 4
+            if !button_clicked {
+                // ลองตรวจสอบหลายตำแหน่งที่อาจเป็นไปได้สำหรับปุ่มกลาง
+                if (mouse_state.button_pressed.get(0).map_or(false, |&pressed| pressed) && !last_mouse_buttons[0]) ||
+                   (mouse_state.button_pressed.get(3).map_or(false, |&pressed| pressed) && !last_mouse_buttons[3]) ||
+                   (mouse_state.button_pressed.get(4).map_or(false, |&pressed| pressed) && !last_mouse_buttons[4]) {
+                    
+                    // แสดงข้อมูลเพื่อตรวจสอบว่าตำแหน่งใดถูกกด
+                    println!("Middle button detected - full button state: {:?}", mouse_state.button_pressed);
+                    record_mouse_click(&controller, current_position, "middle").await;
+                    button_clicked = true;
+                }
+            }
+            
+            if button_clicked {
+                mouse_click_cooldown = true;
+                last_click_time = std::time::Instant::now();
             }
             
             // บันทึกสถานะเมาส์ล่าสุด
@@ -884,10 +1006,135 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
             // ตรวจสอบการกดปุ่มคีย์บอร์ด
             let current_keys = device_state.get_keys();
             
-            for key in &current_keys {
-                if !last_keys.contains(key) {
-                    // เจอปุ่มใหม่ที่ถูกกด
-                    let key_str = format!("{:?}", key);
+            // เพิ่มการตรวจสอบพิเศษสำหรับปุ่ม F7 และปุ่มฟังก์ชันอื่นๆ
+            if !current_keys.is_empty() {
+                // ตรวจสอบว่ามีการกดปุ่มฟังก์ชันหรือไม่
+                let has_function_key = current_keys.iter().any(|k| {
+                    matches!(k, 
+                        device_query::Keycode::F1 | device_query::Keycode::F2 | 
+                        device_query::Keycode::F3 | device_query::Keycode::F4 | 
+                        device_query::Keycode::F5 | device_query::Keycode::F6 | 
+                        device_query::Keycode::F7 | device_query::Keycode::F8 | 
+                        device_query::Keycode::F9 | device_query::Keycode::F10 | 
+                        device_query::Keycode::F11 | device_query::Keycode::F12
+                    )
+                });
+                
+                // ถ้ามีการกดปุ่มฟังก์ชัน ให้แยกออกมาบันทึกแค่ปุ่มฟังก์ชันเท่านั้น
+                if has_function_key {
+                    // แยกเฉพาะปุ่มฟังก์ชัน
+                    let function_keys: Vec<_> = current_keys.iter().filter(|k| {
+                        matches!(k, 
+                            device_query::Keycode::F1 | device_query::Keycode::F2 | 
+                            device_query::Keycode::F3 | device_query::Keycode::F4 | 
+                            device_query::Keycode::F5 | device_query::Keycode::F6 | 
+                            device_query::Keycode::F7 | device_query::Keycode::F8 | 
+                            device_query::Keycode::F9 | device_query::Keycode::F10 | 
+                            device_query::Keycode::F11 | device_query::Keycode::F12
+                        )
+                    }).collect();
+                    
+                    // ถ้ามีปุ่มฟังก์ชันเพียงปุ่มเดียว ให้บันทึกเฉพาะปุ่มนั้น
+                    if function_keys.len() == 1 {
+                        // ตรวจสอบว่าเป็นปุ่ม F7 ที่ใช้สำหรับเริ่มหรือหยุดการบันทึกหรือไม่
+                        // ถ้าเป็น F7 และเพิ่งเริ่มต้น/หยุดการบันทึก ให้ข้ามการบันทึกคีย์นี้
+                        let is_f7 = matches!(function_keys[0], device_query::Keycode::F7);
+                        
+                        // ถ้าเป็น F7 ที่ใช้เป็น shortcut ควบคุมการบันทึก ให้ข้ามไป
+                        if is_f7 && controller.lock().await.is_recording_toggle_pending {
+                            println!("Ignoring F7 key as it was used to toggle recording");
+                            
+                            // รีเซ็ตค่า recording_toggle_pending
+                            {
+                                let mut controller = controller.lock().await;
+                                controller.is_recording_toggle_pending = false;
+                            }
+                            
+                            // ข้ามการตรวจสอบคีย์คอมโบในรอบนี้
+                            last_keys = current_keys;
+                            tokio::time::sleep(poll_interval).await;
+                            continue;
+                        }
+                        
+                        // บันทึกปุ่มฟังก์ชันตามปกติ
+                        let key_str = format!("{:?}", function_keys[0]);
+                        
+                        let step_data = json!({
+                            "type": "key_press",
+                            "key": key_str,
+                            "wait_time": 0.3,
+                            "randomize": false
+                        });
+                        
+                        add_recorded_step(&controller, "key_press", &step_data).await;
+                        println!("Recorded: Function key {}", key_str);
+                    }
+                }
+            }
+            
+            // จัดการกับคีย์คอมโบ (2-4 ปุ่ม)
+            if !current_keys.is_empty() {
+                // ถ้ามีการเพิ่มปุ่มใหม่หรือลดปุ่ม อัปเดตบัฟเฟอร์
+                if current_keys.len() != last_keys.len() || !current_keys.iter().all(|k| last_keys.contains(k)) {
+                    // ตรวจสอบว่าเป็นการเริ่มกดปุ่มใหม่หรือไม่
+                    if last_keys.is_empty() && !current_keys.is_empty() {
+                        // เริ่มคอมโบใหม่
+                        key_combo_buffer = current_keys.clone();
+                        key_combo_timer = std::time::Instant::now();
+                    } else if !current_keys.is_empty() {
+                        // เพิ่มปุ่มเข้าไปในคอมโบ (ถ้ายังไม่มี)
+                        for key in &current_keys {
+                            if !key_combo_buffer.contains(key) {
+                                key_combo_buffer.push(*key);
+                            }
+                        }
+                        
+                        // ถ้าคอมโบมีขนาดระหว่าง 2-4 ปุ่ม และเวลาผ่านไปเพียงพอ (300ms) บันทึกคอมโบ
+                        if key_combo_buffer.len() >= 2 && key_combo_buffer.len() <= 4 && 
+                           key_combo_timer.elapsed().as_millis() >= 300 && 
+                           current_keys.len() < key_combo_buffer.len() {
+                            // แปลงปุ่มเป็น string
+                            let key_combo = key_combo_buffer.iter()
+                                .map(|k| format!("{:?}", k))
+                                .collect::<Vec<String>>()
+                                .join("+");
+                            
+                            let step_data = json!({
+                                "type": "key_press",
+                                "key": key_combo,
+                                "wait_time": 0.3,
+                                "randomize": false
+                            });
+                            
+                            add_recorded_step(&controller, "key_press", &step_data).await;
+                            println!("Recorded: Key combination {}", key_combo);
+                            
+                            // รีเซ็ตบัฟเฟอร์หลังจากบันทึก
+                            key_combo_buffer.clear();
+                        }
+                    }
+                }
+            } else if !key_combo_buffer.is_empty() {
+                // ปล่อยปุ่มทั้งหมด - ตรวจสอบว่าควรบันทึกคอมโบหรือไม่
+                if key_combo_buffer.len() >= 2 && key_combo_buffer.len() <= 4 {
+                    // แปลงปุ่มเป็น string
+                    let key_combo = key_combo_buffer.iter()
+                        .map(|k| format!("{:?}", k))
+                        .collect::<Vec<String>>()
+                        .join("+");
+                    
+                    let step_data = json!({
+                        "type": "key_press",
+                        "key": key_combo,
+                        "wait_time": 0.3,
+                        "randomize": false
+                    });
+                    
+                    add_recorded_step(&controller, "key_press", &step_data).await;
+                    println!("Recorded: Key combination {}", key_combo);
+                } else if key_combo_buffer.len() == 1 {
+                    // บันทึกการกดปุ่มเดี่ยว
+                    let key_str = format!("{:?}", key_combo_buffer[0]);
                     
                     let step_data = json!({
                         "type": "key_press",
@@ -899,6 +1146,9 @@ fn start_event_recorder(controller: Arc<Mutex<AutomationController>>) {
                     add_recorded_step(&controller, "key_press", &step_data).await;
                     println!("Recorded: Key press {}", key_str);
                 }
+                
+                // รีเซ็ตบัฟเฟอร์
+                key_combo_buffer.clear();
             }
             
             // บันทึกปุ่มที่กดล่าสุด

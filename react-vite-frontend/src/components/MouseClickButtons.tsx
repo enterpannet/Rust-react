@@ -302,33 +302,86 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
     setClipboardModalVisible(false);
   };
 
+  // Add keyboard shortcut functionality
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only process if connected to backend
+      if (!isConnected) return;
+      
+      // Prevent shortcuts when user is typing in an input field
+      if (event.target instanceof HTMLInputElement || 
+          event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Handle mouse click shortcuts
+      if (event.key === 'F1') {
+        event.preventDefault();
+        addMouseClickStep('left');
+      } else if (event.key === 'F2') {
+        event.preventDefault();
+        addMouseClickStep('middle');
+      } else if (event.key === 'F3') {
+        event.preventDefault();
+        addMouseClickStep('right');
+      }
+      
+      // Handle shortcuts execution
+      // F5-F12 for the first 8 shortcuts in the list
+      const functionKeys = ['F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+      const keyIndex = functionKeys.indexOf(event.key);
+      
+      if (keyIndex !== -1 && shortcuts[keyIndex]) {
+        event.preventDefault();
+        performShortcut(shortcuts[keyIndex]);
+      }
+    };
+    
+    // Add the event listener
+    window.addEventListener('keydown', handleKeyDown);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isConnected, shortcuts, mousePosition]); // Dependencies include what we need from the component
+
   return (
     <Card title="การควบคุมอุปกรณ์" className="w-full">
       <div className="flex flex-col gap-4">
         <div>        
-          <h4 className=" font-medium">เมาส์</h4>
+          <h4 className="font-medium">เมาส์</h4>
           <div className="flex flex-col justify-center gap-2">
             <Button 
-              type="primary" 
+       
               onClick={() => addMouseClickStep('left')}
               disabled={!isConnected || !onAddStep}
               className="bg-blue-500 text-white"
             >
-              + คลิกซ้าย(F1)
+              <div className="flex items-center justify-between w-full">
+                <span>+ คลิกซ้าย</span>
+                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white">F1</kbd>
+              </div>
             </Button>
             <Button 
               onClick={() => addMouseClickStep('middle')}
               disabled={!isConnected || !onAddStep}
               className="bg-blue-500 text-white"
             >
-              + คลิกกลาง(F2)
+              <div className="flex items-center justify-between w-full">
+                <span>+ คลิกกลาง</span>
+                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white">F2</kbd>
+              </div>
             </Button>
             <Button 
               onClick={() => addMouseClickStep('right')}
               disabled={!isConnected || !onAddStep}
               className="bg-blue-500 text-white"
             >
-              + คลิกขวา(F3)
+              <div className="flex items-center justify-between w-full">
+                <span>+ คลิกขวา</span>
+                <kbd className="px-2 py-0.5 bg-blue-600 rounded text-xs text-white">F3</kbd>
+              </div>
             </Button>
           </div>
         </div>
@@ -347,7 +400,7 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
           </div>
           
           <div className="flex flex-col gap-2 mt-2">
-            {shortcuts.map(shortcut => (
+            {shortcuts.map((shortcut, index) => (
               <div key={shortcut.id} className="flex items-center gap-2">
                 <Tooltip title={shortcut.description}>
                   <Button
@@ -356,7 +409,12 @@ const MouseClickButtons: React.FC<MouseClickButtonsProps> = ({
                     className="flex-1 text-left"
                     icon={shortcut.name === 'Copy' ? <CopyOutlined /> : undefined}
                   >
-                    {shortcut.name}
+                    <div className="flex items-center justify-between w-full">
+                      <span>{shortcut.name}</span>
+                      {index < 8 && (
+                        <kbd className="px-2 py-0.5 bg-gray-100 rounded text-xs">F{index + 5}</kbd>
+                      )}
+                    </div>
                   </Button>
                 </Tooltip>
                 <Button 

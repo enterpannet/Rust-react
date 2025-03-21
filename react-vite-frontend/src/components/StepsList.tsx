@@ -300,7 +300,7 @@ const StepsList: React.FC<StepsListProps> = ({
         </div>
       } 
       className="w-full h-[550px] flex flex-col"
-      bodyStyle={{ padding: '12px', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}
+      styles={{ body: { padding: '12px', display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' } }}
     >
       <div className="flex-1 overflow-y-auto mb-3">
         {steps.length === 0 ? (
